@@ -155,6 +155,36 @@ function activateUpload() {
     }
   }, 200);
 }
+  // ===== CSV automatisch aus GitHub laden =====
+function loadCSVfromGitHub() {
+  const csvUrl = "https://reneweller123-eng.github.io/Sitzplan_Club/sitzplan.txt"; // <-- Dein funktionierender Link
+
+  fetch(csvUrl, { cache: "no-store" })
+    .then(r => {
+      if (!r.ok) throw new Error("Fehler beim Laden der CSV von GitHub");
+      return r.text();
+    })
+    .then(text => {
+      console.log("✅ CSV erfolgreich von GitHub geladen");
+      // Text in Blob umwandeln, damit handleFile() funktioniert
+      const blob = new Blob([text], { type: "text/csv" });
+      handleFile(blob);
+      // Upload-Elemente ausblenden
+      document.getElementById("uploadButton").style.display = "none";
+      document.getElementById("dropZone").style.display = "none";
+      // CSV auch im localStorage speichern
+      try {
+        localStorage.setItem("csvCache", text);
+        console.log("💾 CSV im localStorage gespeichert (GitHub-Autoload).");
+      } catch (err) {
+        console.warn("Konnte CSV nicht speichern:", err);
+      }
+    })
+    .catch(err => {
+      console.error("❌ Fehler beim Laden:", err);
+      alert("Fehler beim Laden der CSV: " + err.message);
+    });
+}
 </script>
 
 <h2 id="title">Sitzplan Interaktiv – 103 Tische</h2>
@@ -164,6 +194,7 @@ function activateUpload() {
 <button id="uploadButton">CSV-Datei auswählen</button>
 <div id="dropZone">Oder ziehe hier deine CSV-Datei mit <b>Überschrift</b> + 
 <b>Name,Tischnummer,PAX,Bemerkungen</b> (+ optional <b>#ANMERKUNGEN</b>) rein</div>
+  <button onclick="loadCSVfromGitHub()">CSV automatisch laden (GitHub)</button>
 <!-- Automatisches CSV-Laden -->
 <button id="autoLoadButton" style="margin-top:10px;">Automatisch CSV von Online-Link laden</button>
 
@@ -601,6 +632,7 @@ document.getElementById("autoLoadButton").addEventListener("click", async () => 
 </script>
 </body>
 </html>
+
 
 
 
