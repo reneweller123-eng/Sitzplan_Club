@@ -1,7 +1,7 @@
 const CACHE_NAME = "sitzplan-cache-v1";
 const urlsToCache = [
   "./",
-  "./PWNEU_1.html",
+  "./final.html",
   "./plan.png",
   "./manifest.json"
 ];
