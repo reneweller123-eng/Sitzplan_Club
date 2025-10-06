@@ -418,7 +418,7 @@ function handleFile(file){
     addTischEvents();
     // ===== CSV-Daten im localStorage speichern =====
     try {
-      localStorage.setItem("csvCache", text);
+      sessionStorage.setItem("csvCache", text);
       console.log("💾 CSV im localStorage gespeichert.");
     } catch (err) {
       console.warn("Konnte CSV nicht speichern:", err);
@@ -537,7 +537,7 @@ function enableDrag(){
 */
 // ===== Gespeicherte CSV beim Laden automatisch wiederherstellen =====
 window.addEventListener("load", () => {
-  const cached = localStorage.getItem("csvCache");
+  const cached = sessionStorage.getItem("csvCache");
   if (!cached) return; // Keine gespeicherte CSV
 
   console.log("♻️ Gespeicherte CSV gefunden – wird automatisch geladen.");
@@ -571,4 +571,5 @@ document.addEventListener("touchmove", e => {
 </script>
 </body>
 </html>
+
 
