@@ -591,7 +591,7 @@ document.getElementById("autoLoadButton").addEventListener("click", async () => 
 
     // Im localStorage speichern
     const text = await blob.text();
-    localStorage.setItem("csvCache", text);
+    sessionStorage.setItem("csvCache", text);
     console.log("💾 Auto-geladene CSV im localStorage gespeichert.");
   } catch (err) {
     console.error("❌ Fehler beim automatischen Laden:", err);
@@ -601,6 +601,7 @@ document.getElementById("autoLoadButton").addEventListener("click", async () => 
 </script>
 </body>
 </html>
+
 
 
 
