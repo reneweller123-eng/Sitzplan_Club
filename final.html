@@ -18,9 +18,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes, minimum-scale=0.5, maximum-scale=3.0">
 <style>
 html, body {
-  overscroll-behavior: contain; /* Verhindert Pull-to-Refresh */
-  touch-action: pan-x pan-y;    /* Normales Scrollen, aber kein Refresh */
+  overscroll-behavior-y: contain; /* Verhindert Pull-to-Refresh nur vertikal */
+  touch-action: pinch-zoom pan-y; /* erlaubt Pinch-Zoom, normales Scrollen */
 }
+
 body { font-family: Arial, sans-serif; text-align: center; margin:0; padding:0;}
 #title { font-size:24px; font-weight:bold; margin-top:20px;}
 
@@ -607,5 +608,6 @@ window.addEventListener("beforeunload", (event) => {
 </script>
 </body>
 </html>
+
 
 
