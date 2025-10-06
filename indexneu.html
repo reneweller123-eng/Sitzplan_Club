@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<!-- PWA-Einstellungen -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#008000">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('service-worker.js')
+        .then(() => console.log('✅ Service Worker registriert'))
+        .catch(err => console.error('❌ Service Worker Fehler:', err));
+    });
+  }
+</script>
+<title>Sitzplan Interaktiv – 103 Tische</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+html, body {
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+body { font-family: Arial, sans-serif; text-align: center; margin:0; padding:0;}
+#title { font-size:24px; font-weight:bold; margin-top:20px;}
+
+/* Saalplan-Button (GitHub-CSV laden) */
+#saalplanButton {
+  display:block;
+  margin:20px auto 10px auto;
+  padding:12px 20px;
+  font-size:18px;
+  font-weight:bold;
+  border:2px solid #008000;
+  border-radius:8px;
+  background:#00a000;
+  color:white;
+  cursor:pointer;
+  transition:all 0.3s ease;
+}
+#saalplanButton:hover { background:#008000; }
+
+/* Upload-Button (derzeit deaktiviert) */
+#uploadButton {
+  margin-top:15px; padding:10px 18px; font-size:16px; cursor:pointer;
+  border:1px solid #888; border-radius:6px; background:#f0f0f0; transition:all 0.3s ease;
+}
+#uploadButton:hover { background:#e6e6e6; }
+
+#dropZone {
+  margin-top:15px; border:2px dashed #aaa; padding:20px; color:#666;
+  width:90%; max-width:1200px; margin-left:auto; margin-right:auto;
+}
+
+/* Layout */
+#topContainer { display:flex; justify-content:center; align-items:flex-start; gap:10px; margin-top:20px; flex-wrap:wrap;}
+#searchBox { padding:5px; width:250px; font-size:16px; }
+
+/* Anmerkungen-Box */
+#anmerkungenBox {
+  display:none; background:#f9f9f9; border:1px solid #ccc; border-radius:8px;
+  padding:10px 12px; margin-top:10px; text-align:left; width:250px;
+}
+#anmerkungenBox strong { display:block; margin-bottom:6px; }
+#anmerkungenText { color:red; line-height:1.6; }
+#anmerkungenText .punkt { display:block; margin-left:10px; }
+
+/* Tabelle */
+#namensListe {
+  display:inline-block; text-align:left; width:700px; border:1px solid #ccc;
+  padding:0; max-height:350px; overflow-y:auto;
+}
+#namensListe table { border-collapse:collapse; width:100%;}
+#namensListe th, #namensListe td { padding:5px 8px; border-bottom:1px solid #ccc; white-space:nowrap; }
+#namensListe th { position:sticky; top:0; background:#f5f5f5; }
+#namensListe tr:hover { background-color:#eee; cursor:pointer; }
+.sort-btn { border:none; background:none; cursor:pointer; font-size:12px; margin-left:4px; }
+th:nth-child(2), td:nth-child(2) { width:70px; text-align:center; }
+th:nth-child(3), td:nth-child(3) { width:60px; text-align:center; }
+th:nth-child(4), td:nth-child(4) { width:420px; }
+
+/* SVG */
+#planContainer { position:relative; width:90%; max-width:1200px; margin:20px auto; }
+#planContainer img { width:100%; display:block; }
+#planSVG { position:absolute; top:0; left:0; width:100%; height:100%; }
+
+/* Grünes Blinken */
+@keyframes blinkGreen {
+  0%   { stroke:#00ff00; stroke-width:3px; fill:rgba(0,255,0,0.75);}
+  50%  { stroke:#00aa00; stroke-width:6px; fill:rgba(0,255,0,0.2);}
+  100% { stroke:#00ff00; stroke-width:3px; fill:rgba(0,255,0,0.75);}
+}
+.blink { animation: blinkGreen 0.8s ease-in-out infinite; }
+</style>
+</head>
+
+<body>
+
+<!-- Button zum automatischen CSV-Laden -->
+<button id="saalplanButton" onclick="loadCSVfromGitHub()">Saalplan laden</button>
+
+<h2 id="title">Sitzplan Interaktiv – 103 Tische</h2>
+
+<!-- Upload-Button + DropZone (derzeit deaktiviert) -->
+<!--
+<input type="file" id="fileInput" accept=".csv" style="display:none;">
+<button id="uploadButton">CSV-Datei auswählen</button>
+<div id="dropZone">Oder ziehe hier deine CSV-Datei mit <b>Überschrift</b> +
+<b>Name,Tischnummer,PAX,Bemerkungen</b> (+ optional <b>#ANMERKUNGEN</b>) rein</div>
+-->
+
+<div id="topContainer">
+  <div>
+    <input id="searchBox" type="text" placeholder="Name oder Tischnummer suchen…">
+    <div id="anmerkungenBox">
+      <strong>Weitere Anmerkungen:</strong>
+      <div id="anmerkungenText"></div>
+    </div>
+  </div>
+
+  <div id="namensListe">
+    <table>
+      <thead>
+        <tr>
+          <th>Name <button class="sort-btn" id="sortName">▲▼</button></th>
+          <th>Tischnummer <button class="sort-btn" id="sortTisch">▲▼</button></th>
+          <th>PAX</th>
+          <th>Bemerkungen</th>
+        </tr>
+      </thead>
+      <tbody id="namensListeBody">
+        <tr><td colspan="4">Keine Daten geladen.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div id="planContainer">
+  <img src="plan.png" alt="Sitzplan">
+  <svg id="planSVG" viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg"></svg>
+</div>
+
+<script>
+/* =========================
+   CSV automatisch aus GitHub laden
+   ========================= */
+function loadCSVfromGitHub() {
+  const csvUrl = "https://reneweller123-eng.github.io/Sitzplan_Club/sitzplan.txt"; // <- Dein funktionierender GitHub-Link
+  fetch(csvUrl, { cache: "no-store" })
+    .then(r => {
+      if (!r.ok) throw new Error("Fehler beim Laden der CSV von GitHub");
+      return r.text();
+    })
+    .then(text => {
+      console.log("✅ CSV erfolgreich von GitHub geladen");
+      const blob = new Blob([text], { type: "text/csv" });
+      handleFile(blob);
+      document.getElementById("saalplanButton").style.display = "none";
+      try { sessionStorage.setItem("csvCache", text); } catch (err) { console.warn("Konnte CSV nicht speichern:", err); }
+    })
+    .catch(err => {
+      console.error("❌ Fehler beim Laden:", err);
+      alert("Fehler beim Laden der CSV: " + err.message);
+    });
+}
+
+/* =========================
+   Fixe Tischkoordinaten (1–103)
+   ========================= */
+const svgNS="http://www.w3.org/2000/svg";
+const koordinaten={
+  1:{cx:934.8996641992294,cy:346.65360538231823},2:{cx:894.5030937165814,cy:360.22008123821695},
+  3:{cx:862.5542527250954,cy:371.9776936466625},4:{cx:829.549445547214,cy:382.83087433138144},
+  5:{cx:803.9364016740997,cy:393.6840550161004},6:{cx:776.2114254281947,cy:409.0593943194522},
+  7:{cx:749.5424153686848,cy:425.3391653465307},8:{cx:720.7614729363846,cy:442.5233680973357},
+  9:{cx:686.7006995721083,cy:470.5607515328597},10:{cx:905.0158447562992,cy:285.1522481689108},
+  11:{cx:871.5416930155137,cy:294.1932149434685},12:{cx:833.2570549056561,cy:310.472985970547},
+  13:{cx:798.1403153549843,cy:326.7527569976254},14:{cx:768.3034067362887,cy:340.3192328535241},
+  15:{cx:706.7875125257356,cy:374.68763835513414},16:{cx:660.0551449247159,cy:406.3427486855644},
+  17:{cx:640.7778981699729,cy:380.1142286974936},18:{cx:692.2503859037126,cy:348.4591183670633},
+  19:{cx:643.4060859299026,cy:538.3897803496451},20:{cx:664.2555542581795,cy:568.2360272326223},
+  21:{cx:686.7476103963429,cy:592.6523333105318},22:{cx:706.5411125382248,cy:618.8808532986027},
+  23:{cx:724.2226823073161,cy:645.1093732866734},24:{cx:699.6656046205967,cy:659.5802808662987},
+  25:{cx:680.388357865854,cy:683.0955056831898},26:{cx:656.8872463655301,cy:709.3240256712606},
+  27:{cx:627.0503377468345,cy:739.1702725542377},28:{cx:610.9409895512774,cy:720.1772063559796},
+  29:{cx:591.6637427965347,cy:703.8974353289011},30:{cx:563.9387665506297,cy:683.9999374069164},
+  31:{cx:541.0242766737967,cy:663.1946572984968},32:{cx:556.5939140700975,cy:624.304093178254},
+  33:{cx:594.3388413806988,cy:664.0990890222234},34:{cx:623.6360392001379,cy:689.4231772865677},
+  35:{cx:584.2954349038852,cy:591.744551124097},36:{cx:617.8164974689054,cy:623.3996614545274},
+  37:{cx:650.2815938475303,cy:653.2459083375045},38:{cx:617.276786669649,cy:560.0894407936668},
+  39:{cx:647.6299506754835,cy:593.5534145715502},40:{cx:677.9831146813179,cy:623.3996614545274},
+  41:{cx:406.9165710015985,cy:494.96700622264495},42:{cx:379.19159475569353,cy:471.4517814057539},
+  43:{cx:355.6904832553696,cy:504.9157551836373},44:{cx:339.5811350598125,cy:528.4309800005284},
+  45:{cx:321.35985449146494,cy:555.5639317123258},46:{cx:304.1945401095126,cy:582.6968834241231},
+  47:{cx:440.14432275487314,cy:405.42826557371353},48:{cx:470.4974867607076,cy:375.5820186907364},
+  49:{cx:501.90661695293744,cy:341.21361318912636},50:{cx:405.5438385913404,cy:367.44213317719715},
+  51:{cx:425.9239623567132,cy:347.5412847925043},52:{cx:450.99729543057134,cy:324.9304916993398},
+  53:{cx:473.95869613163893,cy:304.12856205362846},54:{cx:373.37205302446085,cy:328.5482185942461},
+  55:{cx:405.8371494030859,cy:296.89310826381586},56:{cx:437.2462795953156,cy:269.76015655201843},
+  57:{cx:396.8497091126674,cy:206.44993589115785},58:{cx:363.84490193478615,cy:239.00947794531473},
+  59:{cx:336.1199256888813,cy:265.23799793338554},60:{cx:351.689563085182,cy:185.6480062454465},
+  61:{cx:321.3833099035823,cy:220.01306128434837},62:{cx:292.60236747128204,cy:255.28589850968498},
+  63:{cx:218.41487902398558,cy:341.2069122637101},64:{cx:190.68990277808058,cy:379.19304466022646},
+  65:{cx:164.02089271857093,cy:415.3703136092896},66:{cx:136.295916472666,cy:456.9741729007123},
+  67:{cx:113.85077115873725,cy:495.86473702095526},68:{cx:90.34965965841334,cy:538.3730280361045},
+  69:{cx:109.08719561390004,cy:563.6971163004488},70:{cx:126.76876538299122,cy:530.2331425225653},
+  71:{cx:149.2608215211546,cy:501.28797690060674},72:{cx:167.9983574766412,cy:476.86832035998907},
+  73:{cx:190.95975817770878,cy:445.2132100295588},74:{cx:211.8092265059858,cy:409.0359410804956},
+  75:{cx:229.49079627507717,cy:386.4251479873311},76:{cx:246.11639985777325,cy:360.1966279992603},
+  77:{cx:900.5455800232073,cy:218.20084737418722},78:{cx:865.4288404725355,cy:232.6717549538125},
+  79:{cx:830.3121009218639,cy:245.33379908598462},80:{cx:797.3072937439825,cy:257.9958432181567},
+  81:{cx:759.609277257616,cy:273.3678320588004},82:{cx:725.5485038933394,cy:292.3608982570586},
+  83:{cx:907.9607987400916,cy:259.80135620290173},84:{cx:874.9559915622102,cy:269.7501051638941},
+  85:{cx:841.951184384329,cy:279.6988541248865},86:{cx:776.2114254281947,cy:308.64066928413706},
+  87:{cx:742.1506520639181,cy:324.9204403112155},88:{cx:629.9483809063921,cy:275.17669550625357},
+  89:{cx:664.5254096578078,cy:252.56590241308908},90:{cx:691.7106751044563,cy:238.9994265571904},
+  91:{cx:720.5385283609912,cy:220.9074416199507},92:{cx:701.2612816062484,cy:191.06119473697356},
+  93:{cx:669.3124406147624,cy:210.05426093523175},94:{cx:642.6434305552526,cy:227.23846368603677},
+  95:{cx:611.750555750162,cy:242.61380298938863},96:{cx:360.16074798846154,cy:423.5001477347046},
+  97:{cx:386.2900472487148,cy:446.1109408278691},98:{cx:409.2514479497824,cy:466.9128704735805},
+  99:{cx:350.8996641992294,cy:559.9222272040781},100:{cx:322.50309371658136,cy:596.6142162695653},
+  101:{cx:347.55425272509535,cy:613.5108316134749},102:{cx:374.54944554721396,cy:578.1129858790171},
+  103:{cx:389.93640167409967,cy:552.9931460154874}
+};
+
+const svg=document.getElementById("planSVG");
+for(const id in koordinaten){
+  const g=document.createElementNS(svgNS,"g");
+  g.id="tisch_"+id;
+  const c=document.createElementNS(svgNS,"circle");
+  c.setAttribute("cx",koordinaten[id].cx);
+  c.setAttribute("cy",koordinaten[id].cy);
+  c.setAttribute("r",11);
+  c.setAttribute("fill","transparent");
+  c.setAttribute("stroke","transparent");
+  c.setAttribute("stroke-width",2);
+  g.appendChild(c);
+  svg.appendChild(g);
+}
+
+/* =========================
+   Datenstruktur + CSV-Verarbeitung
+   ========================= */
+let allEntries=[], tischMap={};
+
+function decodeBest(bytes){
+  const tryDec=enc=>{try{return new TextDecoder(enc,{fatal:false}).decode(bytes);}catch(e){return"";}};
+  const utf8=tryDec('utf-8');
+  const bad=s=>/Ã.|�/.test(s);
+  if(utf8 && !bad(utf8)) return utf8;
+  const win=tryDec('windows-1252'), lat1=tryDec('iso-8859-1');
+  const badCount=s=>(s.match(/�/g)||[]).length+(s.match(/Ã./g)||[]).length;
+  return [utf8,win,lat1].filter(Boolean).sort((a,b)=>badCount(a)-badCount(b))[0]||utf8;
+}
+function detectDelimiter(line){
+  const sc=(line.match(/;/g)||[]).length, cm=(line.match(/,/g)||[]).length;
+  return sc>cm?';':',';
+}
+function handleFile(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const bytes=new Uint8Array(e.target.result);
+    let text=decodeBest(bytes).replace(/^\uFEFF/,'');
+    const linesAll=text.split(/\r?\n/).filter(l=>l.trim().length>0);
+    if(linesAll.length<2){ alert("CSV muss eine Überschrift + Kopfzeile + Daten enthalten!"); return; }
+
+    document.getElementById("saalplanButton").style.display="none";
+    document.getElementById("title").textContent = linesAll[0].trim();
+    const delimiter=detectDelimiter(linesAll[1]);
+    let dataLines=linesAll.slice(2);
+
+    const anmerkungen=[];
+    dataLines=dataLines.filter(line=>{
+      if(/^#A[NB]MERKUNGEN/i.test(line)){
+        let txt=line.split(delimiter).slice(1).join(delimiter).trim();
+        if(txt) anmerkungen.push(txt);
+        return false;
+      }
+      return true;
+    });
+
+    const box=document.getElementById("anmerkungenBox");
+    if(anmerkungen.length>0){
+      document.getElementById("anmerkungenText").innerHTML = anmerkungen.map(a=>`<span class="punkt">• ${a}</span>`).join("");
+      box.style.display="block";
+    } else box.style.display="none";
+
+    allEntries=[]; tischMap={};
+    const tbody=document.getElementById("namensListeBody");
+    tbody.innerHTML="";
+    dataLines.forEach(line=>{
+      const p=line.split(delimiter);
+      if(p.length<2) return;
+      const entry={
+        name:(p[0]||"").trim(),
+        tisch:(p[1]||"").trim(),
+        pax:(p[2]||"").trim(),
+        bemerkungen:(p[3]||"").trim()
+      };
+      if(!entry.name || !entry.tisch) return;
+      allEntries.push(entry);
+      if(!tischMap[entry.tisch]) tischMap[entry.tisch]=[];
+      tischMap[entry.tisch].push(entry.name);
+    });
+
+    renderTable(allEntries);
+    setTooltips();
+    addTischEvents();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+/* =========================
+   Darstellung & Suche
+   ========================= */
+function renderTable(data){
+  const tbody=document.getElementById("namensListeBody");
+  tbody.innerHTML="";
+  data.forEach(e=>{
+    const tr=document.createElement("tr");
+    tr.dataset.name=e.name;
+    tr.dataset.tisch=e.tisch;
+    tr.innerHTML=`<td>${e.name}</td><td>${e.tisch}</td><td>${e.pax||""}</td><td>${e.bemerkungen||""}</td>`;
+    tr.onclick=()=>highlightTische([e.tisch], true);
+    tbody.appendChild(tr);
+  });
+}
+let sortNameAsc=true, sortTischAsc=true;
+document.getElementById("sortName").onclick=()=>{
+  allEntries.sort((a,b)=> sortNameAsc ? a.name.localeCompare(b.name,'de') : -a.name.localeCompare(b.name,'de'));
+  sortNameAsc=!sortNameAsc; renderTable(allEntries);
+};
+document.getElementById("sortTisch").onclick=()=>{
+  allEntries.sort((a,b)=>{
+    const A=parseInt(a.tisch)||0, B=parseInt(b.tisch)||0;
+    return sortTischAsc ? A-B : B-A;
+  });
+  sortTischAsc=!sortTischAsc; renderTable(allEntries);
+};
+document.getElementById("searchBox").addEventListener("input", ()=>{
+  const q=document.getElementById("searchBox").value.toLowerCase();
+  const filtered=allEntries.filter(e=> e.name.toLowerCase().includes(q)||e.tisch.toLowerCase().includes(q));
+  renderTable(filtered);
+  resetCircles();
+});
+
+/* =========================
+   Highlight / Tooltips
+   ========================= */
+function resetCircles(){
+  document.querySelectorAll("#planSVG circle").forEach(c=>{
+    c.setAttribute("stroke","transparent");
+    c.setAttribute("fill","transparent");
+    c.classList.remove("blink");
+  });
+}
+function highlightTische(keys,scroll=false){
+  resetCircles();
+  const tische=new Set(keys.map(String));
+  tische.forEach(tNr=>{
+    const g=document.getElementById("tisch_"+tNr);
+    if(g){
+      const c=g.querySelector("circle");
+      c.classList.add("blink");
+      if(scroll) c.scrollIntoView({behavior:"smooth", block:"center"});
+    }
+  });
+}
+function setTooltips(){
+  for(const tNr in tischMap){
+    const g=document.getElementById("tisch_"+tNr);
+    if(!g) continue;
+    const c=g.querySelector("circle");
+    const old=c.querySelector("title"); if(old) c.removeChild(old);
+    const t=document.createElementNS(svgNS,"title");
+    t.textContent=tischMap[tNr].join(", ");
+    c.appendChild(t);
+  }
+}
+function addTischEvents(){
+  for(const tNr in tischMap){
+    const g=document.getElementById("tisch_"+tNr);
+    if(!g) continue;
+    g.style.cursor="pointer";
+    g.onclick=()=>{
+      document.querySelectorAll("#namensListeBody tr").forEach(r=>r.style.backgroundColor="");
+      tischMap[tNr].forEach(n=>{
+        Array.from(document.querySelectorAll("#namensListeBody tr"))
+          .filter(r=>r.dataset.name===n && r.dataset.tisch===tNr)
+          .forEach(r=>r.style.backgroundColor="yellow");
+      });
+      highlightTische([tNr], true);
+    };
+  }
+}
+</script>
+</body>
+</html>
