@@ -1,7 +1,7 @@
 {
   "name": "Sitzplan Interaktiv",
   "short_name": "Sitzplan",
-  "start_url": "./index.html",
+  "start_url": "./PWNEU_1.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#008000",
