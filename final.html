@@ -130,7 +130,7 @@ function activateApp() {
 
 /* ===== CSV automatisch aus GitHub laden (Button) ===== */
 function loadCSVfromGitHub() {
-  const csvUrl = "https://reneweller123-eng.github.io/Sitzplan_Club/sitzplan_.txt";
+  const csvUrl = "https://reneweller123-eng.github.io/Sitzplan_Club/sitzplan.txt";
   fetch(csvUrl, { cache: "no-store" })
     .then(r => {
       if (!r.ok) throw new Error("Fehler beim Laden der CSV von GitHub");
@@ -608,6 +608,7 @@ window.addEventListener("beforeunload", (event) => {
 </script>
 </body>
 </html>
+
 
 
 
